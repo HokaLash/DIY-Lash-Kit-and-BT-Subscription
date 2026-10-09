@@ -607,8 +607,9 @@ function renderBtProfit(d, s, orders){
   document.getElementById('btpRevKpis').innerHTML = [
     ['Subscription Payments', money(subRev), Math.round(subRev / 19.95) + ' × $19.95 memberships collected', 'green'],
     ['Claim Shipping', money(shipRev), totalClaims + ' claims × $11.95', 'green'],
+    ['Total Revenue', money(grossRev), 'all money in: subscriptions + claim shipping', 'green'],
     ['Refunds', '-' + money(refundsTotal), money(subRefund) + ' membership + ' + money(shipRefund) + ' shipping', 'red'],
-    ['Net Revenue', money(totalRev), 'gross ' + money(grossRev) + ' minus refunds', 'green'],
+    ['Net Revenue', money(totalRev), 'total revenue ' + money(grossRev) + ' minus refunds', 'green'],
     ['Active Subscriptions', String(d.btActiveSubs || 0), 'billing now, of ' + (d.btRosterSize || 0) + ' ever subscribed', 'purple'],
     ['Inactive / Not Billing', String(d.btCancelled || 0), 'cancelled, paused, or trial not converted', 'red'],
     ['Trials Started', String(d.btTrials || 0), '7-day free trials ($0 until they renew)', 'purple'],
@@ -628,6 +629,7 @@ function renderBtProfit(d, s, orders){
       '<tr class="grp"><td>Revenue</td><td class="num">In</td></tr>'
     + plRow('Subscription payments ($19.95)', subRev, 'sub')
     + plRow('Claim shipping ($11.95 × ' + totalClaims + ')', shipRev, 'sub')
+    + plRow('Total revenue', grossRev, 'tot')
     + plRow('Refunds — memberships', subRefund ? -subRefund : 0, 'sub')
     + plRow('Refunds — claim shipping', shipRefund ? -shipRefund : 0, 'sub')
     + plRow('Net revenue', totalRev, 'tot')
