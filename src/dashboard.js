@@ -135,6 +135,9 @@ td.num,th.num{text-align:right}
         <div><label>Avg months retained</label><input id="in_months" type="number" step="0.5" min="0"></div>
         <div><label>Monthly membership margin ($)</label><input id="in_memberMargin" type="number" step="0.01" min="0"></div>
         <div><label>Manpower / fixed costs in range ($)</label><input id="in_manpower" type="number" step="0.01" min="0"></div>
+        <div><label>Active subs <span style="text-transform:none;color:#4ade80">(from subscription app)</span></label><input id="in_btActive" type="number" step="1" min="0"></div>
+        <div><label>Canceled subs <span style="text-transform:none;color:#4ade80">(from app)</span></label><input id="in_btCancelled" type="number" step="1" min="0"></div>
+        <div><label>Paused subs <span style="text-transform:none;color:#4ade80">(from app)</span></label><input id="in_btPaused" type="number" step="1" min="0"></div>
       </div>
       <button class="save" onclick="saveSettings()">Save inputs</button>
     </div>
@@ -270,7 +273,7 @@ async function load(){
   if (!r.ok) { document.getElementById('loading').textContent = 'Access denied or data error (' + r.status + ')'; return; }
   DATA = await r.json();
   SETTINGS = DATA.settings || {};
-  ['adSpend','cjdCost','feePct','trialConv','months','memberMargin','manpower','p1Spend','p2Spend','upsellCostPct','mtdSpend'].forEach(f => {
+  ['adSpend','cjdCost','feePct','trialConv','months','memberMargin','manpower','p1Spend','p2Spend','upsellCostPct','mtdSpend','btActive','btCancelled','btPaused'].forEach(f => {
     document.getElementById('in_' + f).value = SETTINGS[f] ?? '';
   });
   render();
@@ -281,7 +284,7 @@ async function load(){
 
 async function saveSettings(){
   const body = { k: KEY };
-  ['adSpend','cjdCost','feePct','trialConv','months','memberMargin','manpower','p1Spend','p2Spend','upsellCostPct','mtdSpend'].forEach(f => {
+  ['adSpend','cjdCost','feePct','trialConv','months','memberMargin','manpower','p1Spend','p2Spend','upsellCostPct','mtdSpend','btActive','btCancelled','btPaused'].forEach(f => {
     body[f] = parseFloat(document.getElementById('in_' + f).value) || 0;
   });
   await fetch('/api/dashboard-settings', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -603,6 +606,23 @@ function renderBtProfit(d, s, orders){
   vb.innerHTML = (profit >= 0 ? '✅' : '⚠️') + '<span>Beauty Tester net profit: <b>' + money(profit)
     + '</b> on ' + money(totalRev) + ' net revenue (after ' + money(refundsTotal) + ' refunds, ' + pct(margin) + ' margin) — over the selected range</span>';
 
+  // subscription counts — use the REAL numbers from the subscription app when
+  // entered in Inputs (Shopify can't read another app's sub status, so the
+  // auto-derived figure is only an estimate and will not match the app).
+  const appActive = s.btActive || 0, appCancelled = s.btCancelled || 0, appPaused = s.btPaused || 0;
+  const appTotal = appActive + appCancelled + appPaused;
+  const subCards = appTotal > 0
+    ? [
+        ['Active Subscriptions', String(appActive), 'currently billing — from subscription app', 'green'],
+        ['Canceled', String(appCancelled), 'from subscription app', 'red'],
+        ['Paused', String(appPaused), 'from subscription app', 'yellow'],
+        ['Total Subscriptions', String(appTotal), 'active + canceled + paused', 'purple'],
+      ]
+    : [
+        ['Active Subscriptions', String(d.btActiveSubs || 0), 'ESTIMATE from Shopify billing — enter real #s in Inputs', 'purple'],
+        ['Inactive / Not Billing', String(d.btCancelled || 0), 'estimate — cancelled/paused/unconverted', 'red'],
+      ];
+
   // revenue KPIs
   document.getElementById('btpRevKpis').innerHTML = [
     ['Subscription Payments', money(subRev), Math.round(subRev / 19.95) + ' × $19.95 memberships collected', 'green'],
@@ -610,10 +630,9 @@ function renderBtProfit(d, s, orders){
     ['Total Revenue', money(grossRev), 'all money in: subscriptions + claim shipping', 'green'],
     ['Refunds', '-' + money(refundsTotal), money(subRefund) + ' membership + ' + money(shipRefund) + ' shipping', 'red'],
     ['Net Revenue', money(totalRev), 'total revenue ' + money(grossRev) + ' minus refunds', 'green'],
-    ['Active Subscriptions', String(d.btActiveSubs || 0), 'billing now, of ' + (d.btRosterSize || 0) + ' ever subscribed', 'purple'],
-    ['Inactive / Not Billing', String(d.btCancelled || 0), 'cancelled, paused, or trial not converted', 'red'],
+  ].concat(subCards).concat([
     ['Trials Started', String(d.btTrials || 0), '7-day free trials ($0 until they renew)', 'purple'],
-  ].map(k => '<div class="kpi-card ' + k[3] + '"><div class="kpi-label">' + k[0] + '</div><div class="kpi-value">' + k[1] + '</div><div class="kpi-sub">' + k[2] + '</div></div>').join('');
+  ]).map(k => '<div class="kpi-card ' + k[3] + '"><div class="kpi-label">' + k[0] + '</div><div class="kpi-value">' + k[1] + '</div><div class="kpi-sub">' + k[2] + '</div></div>').join('');
 
   // cost KPIs
   document.getElementById('btpCostKpis').innerHTML = [
