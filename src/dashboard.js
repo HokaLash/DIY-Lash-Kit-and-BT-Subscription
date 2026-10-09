@@ -99,14 +99,8 @@ td.num,th.num{text-align:right}
   <div class="toolbar">
     <p class="section-title">The number that decides everything: LTV vs CAC</p>
     <div class="filter-wrap">
-      <label>Date range</label>
-      <select id="rangeSel">
-        <option value="7">Last 7 days</option>
-        <option value="14">Last 14 days</option>
-        <option value="30" selected>Last 30 days</option>
-        <option value="60">Last 60 days</option>
-        <option value="90">Last 90 days</option>
-      </select>
+      <label>Month</label>
+      <select id="rangeSel"></select>
       <button class="refresh-btn" onclick="load()">↺ Refresh</button>
     </div>
   </div>
@@ -188,7 +182,7 @@ td.num,th.num{text-align:right}
           <div><b style="color:#e2e8f0">Refunds</b> — every Shopify-recorded refund on a membership charge or claim shipping (includes the first-box shipping refund promise), subtracted from revenue. Refunds issued directly in NMI without a matching Shopify refund are not counted.</div>
           <div><b style="color:#e2e8f0">Cancellations</b> — cancelled orders are never counted as revenue, and a cancelled or paused subscription stops billing so it drops out of "active" within a day. Churned members keep the profit they already generated; only refunds claw money back.</div>
           <div><b style="color:#e2e8f0">Item cost</b> — the fulfillment (CJD) cost of each claimed product, per the Beauty Tester economics.</div>
-          <div><b style="color:#e2e8f0">Easy Subscription app</b> — your only platform fee, $39/month, prorated to the selected range. No ad spend, no processing fees.</div>
+          <div><b style="color:#e2e8f0">Easy Subscription app</b> — your only platform fee, a flat $39 for each month in view. No ad spend, no processing fees.</div>
         </div>
       </div>
     </div>
@@ -262,14 +256,46 @@ function switchTab(t){
   if (DATA) render();
 }
 
+// Number of calendar months the selected range touches (July alone = 1, all
+// months July..October = 4). The subscription app bills a flat $39 per month.
+function calMonths(days){
+  const seen = {};
+  (days || []).forEach(function (x) { seen[String(x).slice(0, 7)] = 1; });
+  return Math.max(1, Object.keys(seen).length);
+}
+
 function money(n){ return '$' + (Math.round(n * 100) / 100).toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function pct(n){ return (Math.round(n * 10) / 10) + '%'; }
+
+// Months available in the dropdown: July 2026 (first data month) through the
+// current month, newest first, plus an all-months total. The current month is
+// naturally month-to-date.
+const FIRST_MONTH = '2026-07';
+function ym(d){ return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
+function populateMonths(){
+  const sel = document.getElementById('rangeSel');
+  const now = new Date();
+  const opts = [];
+  for (let d = new Date(now.getFullYear(), now.getMonth(), 1); ym(d) >= FIRST_MONTH; d = new Date(d.getFullYear(), d.getMonth() - 1, 1)) {
+    const label = d.toLocaleString('en-US', { month: 'long', year: 'numeric' }) + (ym(d) === ym(now) ? ' (to date)' : '');
+    opts.push('<option value="' + ym(d) + '">' + label + '</option>');
+  }
+  sel.innerHTML = '<option value="all">All months (total)</option>' + opts.join('');
+  sel.value = ym(now);
+}
+// Query string for the selected month (or all months since July).
+function rangeQuery(){
+  const v = document.getElementById('rangeSel').value;
+  if (v === 'all') return 'start=' + FIRST_MONTH + '-01';
+  const y = +v.slice(0, 4), m = +v.slice(5, 7);
+  const last = new Date(y, m, 0).getDate();
+  return 'start=' + v + '-01&end=' + v + '-' + String(last).padStart(2, '0');
+}
 
 async function load(){
   document.getElementById('loading').style.display = 'block';
   document.getElementById('dash').style.display = 'none';
-  const days = document.getElementById('rangeSel').value;
-  const r = await fetch('/api/dashboard-data?k=' + encodeURIComponent(KEY) + '&days=' + days);
+  const r = await fetch('/api/dashboard-data?k=' + encodeURIComponent(KEY) + '&' + rangeQuery());
   if (!r.ok) { document.getElementById('loading').textContent = 'Access denied or data error (' + r.status + ')'; return; }
   DATA = await r.json();
   SETTINGS = DATA.settings || {};
@@ -332,7 +358,7 @@ function render(){
   const kitProfitTotal = kitOrders * profitPerOrder;
   const redemptions = orders.filter(o => o.isRedemption && o.kitAttr).length;
   const AVG_REDEMPTION_MARGIN = 1.47; // (4.25 + 5.93 - 0.17 - 4.12) / 4 from CJD costs
-  const btAppFee = 39 * (d.days.length / 30); // Easy Subscription app, $39/month prorated
+  const btAppFee = 39 * calMonths(d.days); // Easy Subscription app, flat $39 per calendar month in view
   // Kit-born only: BT revenue from subscriptions that started with (or after) a DIY kit order
   const btProfit = (d.btRecurringRevKit || 0) * (1 - fee) + redemptions * AVG_REDEMPTION_MARGIN - btAppFee;
   const totalCosts = adSpend + manpower;
@@ -474,10 +500,11 @@ function render(){
   (async function(){
     const el=document.getElementById('periodKpis'); if(!el) return;
     const START='2026-08-22';
-    const daysBack=Math.min(90, Math.ceil((Date.now()-new Date(START+'T00:00:00-07:00').getTime())/86400000)+2);
     let full=DATA;
-    if (parseInt(document.getElementById('rangeSel').value,10) < daysBack) {
-      try{ const r=await fetch('/api/dashboard-data?k='+encodeURIComponent(KEY)+'&days='+daysBack); if(r.ok) full=await r.json(); }catch(e){}
+    // "All months" already starts in July (before the relaunch); any single month
+    // does not, so fetch the relaunch-to-today window separately.
+    if (document.getElementById('rangeSel').value !== 'all') {
+      try{ const r=await fetch('/api/dashboard-data?k='+encodeURIComponent(KEY)+'&start='+START); if(r.ok) full=await r.json(); }catch(e){}
     }
     const now=new Date();
     const mtdStart=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01';
@@ -593,7 +620,7 @@ function renderBtProfit(d, s, orders){
 
   // COSTS
   const itemCost = weeks.reduce((a, w) => a + (cl[w] || 0) * COGS[w], 0);
-  const months = Math.max(0, (d.days ? d.days.length : 30) / 30);
+  const months = calMonths(d.days);
   const appFee = APP_FEE_MONTHLY * months;
   const totalCost = itemCost + appFee;
 
@@ -691,6 +718,7 @@ function drawChart(id, cfg){
   charts[id] = new Chart(document.getElementById(id), cfg);
 }
 
+populateMonths();
 document.getElementById('rangeSel').addEventListener('change', load);
 load();
 </script>
